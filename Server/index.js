@@ -249,15 +249,90 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('send-message', async ({ sessionId, chatId, content }) => {
+    socket.on('get-chats', async (sessionId) => {
         const client = clients.get(sessionId);
         if (client) {
-            await client.sendMessage(chatId, content);
+            try {
+                const chats = await client.getChats();
+                socket.emit('chats-loaded', chats.map(c => ({
+                    id: c.id._serialized,
+                    name: c.name,
+                    unreadCount: c.unreadCount,
+                    timestamp: c.timestamp,
+                    lastMessage: c.lastMessage ? { body: c.lastMessage.body } : null
+                })));
+            } catch (err) {
+                console.error('Error getting chats:', err);
+            }
         }
     });
 
-    // ... More handlers ...
-});
+    socket.on('get-kanban-columns', (sessionId) => {
+        const kanban = readJson('kanban.json') || {};
+        socket.emit('kanban-columns', kanban[sessionId] || [
+            { id: 'todo', name: 'A fazer', chats: [] },
+            { id: 'doing', name: 'Em atendimento', chats: [] },
+            { id: 'done', name: 'Finalizado', chats: [] }
+        ]);
+    });
+
+    socket.on('save-kanban-columns', ({ sessionId, columns }) => {
+        const kanban = readJson('kanban.json') || {};
+        kanban[sessionId] = columns;
+        writeJson('kanban.json', kanban);
+        socket.emit('kanban-columns-updated');
+    });
+
+    socket.on('get-chat-history', ({ sessionId, chatId }) => {
+        const historyDir = path.join(__dirname, 'data', 'history', sessionId);
+        const historyFile = path.join(historyDir, `${chatId.replace(/[^a-zA-Z0-9]/g, '_')}.json`);
+        if (fs.existsSync(historyFile)) {
+            const history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+            socket.emit('chat-history', { chatId, history });
+        } else {
+            socket.emit('chat-history', { chatId, history: [] });
+        }
+    });
+
+    socket.on('get-ai-config', (sessionId) => {
+        const aiConfig = readJson('ai_config.json') || {};
+        socket.emit('ai-config-data', aiConfig[sessionId] || { enabled: false, provider: 'openai' });
+    });
+
+    socket.on('save-ai-config', ({ sessionId, config }) => {
+        const aiConfig = readJson('ai_config.json') || {};
+        aiConfig[sessionId] = config;
+        writeJson('ai_config.json', aiConfig);
+        socket.emit('ai-config-saved');
+    });
+
+    socket.on('get-tags', (sessionId) => {
+        const tags = readJson('tags.json') || {};
+        socket.emit('tags-list', tags[sessionId] || []);
+    });
+
+    socket.on('save-tags', ({ sessionId, tags }) => {
+        const allTags = readJson('tags.json') || {};
+        allTags[sessionId] = tags;
+        writeJson('tags.json', allTags);
+        socket.emit('tags-updated');
+    });
+
+    socket.on('get-flows', (sessionId) => {
+        const flows = readJson('flows.json') || {};
+        socket.emit('flows-list', flows[sessionId] || []);
+    });
+
+    socket.on('save-flow', ({ sessionId, flow }) => {
+        const flows = readJson('flows.json') || {};
+        if (!flows[sessionId]) flows[sessionId] = [];
+        const index = flows[sessionId].findIndex(f => f.id === flow.id);
+        if (index > -1) flows[sessionId][index] = flow;
+        else flows[sessionId].push(flow);
+        writeJson('flows.json', flows);
+        socket.emit('flows-list', flows[sessionId]);
+    });
+
 
 // Initialize server
 server.listen(PORT, () => {
