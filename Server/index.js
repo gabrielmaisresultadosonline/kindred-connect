@@ -113,8 +113,154 @@ app.get('/api/me', requireUser, (req, res) => {
     res.json(req.user);
 });
 
-// ... More routes and logic will follow
+// --- WhatsApp Logic ---
+
+async function initializeClient(sessionId) {
+    if (clients.has(sessionId)) return clients.get(sessionId);
+
+    const proxy = proxyManager.getProxyForSession(sessionId);
+    const client = new Client({
+        authStrategy: new LocalAuth({ clientId: sessionId }),
+        puppeteer: {
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                `--proxy-server=${proxy.host}:${proxy.port}`
+            ]
+        }
+    });
+
+    client.on('qr', async (qr) => {
+        const qrImage = await qrcode.toDataURL(qr);
+        io.to(sessionId).emit('qr-generated', { qr: qrImage });
+    });
+
+    client.on('ready', () => {
+        console.log(`Client ${sessionId} is ready!`);
+        const sessions = readJson('sessions.json') || [];
+        const sessIndex = sessions.findIndex(s => s.id === sessionId);
+        if (sessIndex > -1) {
+            sessions[sessIndex].status = 'connected';
+            sessions[sessIndex].lastConnected = Date.now();
+        } else {
+            sessions.push({ id: sessionId, status: 'connected', lastConnected: Date.now() });
+        }
+        writeJson('sessions.json', sessions);
+        io.to(sessionId).emit('client-ready', { sessionId });
+    });
+
+    client.on('message_create', async (msg) => {
+        handleIncomingMessage(sessionId, msg);
+    });
+
+    client.on('disconnected', (reason) => {
+        console.log(`Client ${sessionId} disconnected:`, reason);
+        clients.delete(sessionId);
+        io.to(sessionId).emit('session-status', { status: 'disconnected' });
+    });
+
+    clients.set(sessionId, client);
+    client.initialize().catch(err => {
+        console.error(`Failed to initialize client ${sessionId}:`, err);
+        clients.delete(sessionId);
+    });
+
+    return client;
+}
+
+async function handleIncomingMessage(sessionId, msg) {
+    // Save to history
+    saveMessageToHistory(sessionId, msg.from, msg);
+    
+    // Emit to UI
+    io.to(sessionId).emit('new-message', { chatId: msg.from, message: msg });
+
+    // AI Processing
+    const aiConfig = (readJson('ai_config.json') || {})[sessionId];
+    if (aiConfig && aiConfig.enabled && !msg.fromMe) {
+        processAiMessage(sessionId, msg.from, clients.get(sessionId), msg.body);
+    }
+}
+
+function saveMessageToHistory(sessionId, chatId, msg) {
+    const historyDir = path.join(__dirname, 'data', 'history', sessionId);
+    if (!fs.existsSync(historyDir)) fs.mkdirSync(historyDir, { recursive: true });
+    
+    const historyFile = path.join(historyDir, `${chatId.replace(/[^a-zA-Z0-9]/g, '_')}.json`);
+    const history = fs.existsSync(historyFile) ? JSON.parse(fs.readFileSync(historyFile, 'utf8')) : [];
+    history.push({
+        id: msg.id.id,
+        body: msg.body,
+        from: msg.from,
+        to: msg.to,
+        fromMe: msg.fromMe,
+        timestamp: msg.timestamp,
+        type: msg.type
+    });
+    fs.writeFileSync(historyFile, JSON.stringify(history.slice(-100), null, 2)); // Keep last 100
+}
+
+// AI Message Processing
+async function processAiMessage(sessionId, chatId, client, userText) {
+    const aiConfig = (readJson('ai_config.json') || {})[sessionId];
+    if (!aiConfig) return;
+
+    try {
+        const apiKey = aiConfig.provider === 'deepseek' ? process.env.DEEPSEEK_API_KEY : process.env.OPENAI_API_KEY;
+        const apiUrl = aiConfig.provider === 'deepseek' ? 'https://api.deepseek.com/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+        
+        const response = await axios.post(apiUrl, {
+            model: aiConfig.provider === 'deepseek' ? 'deepseek-chat' : process.env.OPENAI_CHAT_MODEL,
+            messages: [
+                { role: 'system', content: aiConfig.instructions || 'You are a helpful assistant.' },
+                { role: 'user', content: userText }
+            ]
+        }, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+
+        const reply = response.data.choices[0].message.content;
+        await client.sendMessage(chatId, reply);
+    } catch (err) {
+        console.error('AI Error:', err.response?.data || err.message);
+    }
+}
+
+// --- API Routes Continued ---
+
+app.post('/api/create-session', requireUser, async (req, res) => {
+    const sessionId = req.user.id; // Using user ID as session ID for simplicity
+    await initializeClient(sessionId);
+    res.json({ sessionId });
+});
+
+app.get('/api/active-sessions', requireUser, (req, res) => {
+    const sessions = readJson('sessions.json') || [];
+    res.json(sessions.filter(s => clients.has(s.id)));
+});
+
+// ... Socket.IO Handlers ...
+io.on('connection', (socket) => {
+    socket.on('bind-session', (sessionId) => {
+        socket.join(sessionId);
+        if (clients.has(sessionId)) {
+            socket.emit('session-status', { status: 'connected' });
+        }
+    });
+
+    socket.on('send-message', async ({ sessionId, chatId, content }) => {
+        const client = clients.get(sessionId);
+        if (client) {
+            await client.sendMessage(chatId, content);
+        }
+    });
+
+    // ... More handlers ...
+});
+
 // Initialize server
 server.listen(PORT, () => {
     console.log(`ZAPMRO CLOUD running on port ${PORT}`);
 });
+
