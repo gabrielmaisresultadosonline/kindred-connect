@@ -334,8 +334,22 @@ io.on('connection', (socket) => {
     });
 
 
+// Restore sessions on startup
+const restoreSessions = async () => {
+    const sessions = readJson('sessions.json') || [];
+    for (const sess of sessions) {
+        if (sess.status === 'connected') {
+            console.log(`Restoring session ${sess.id}...`);
+            await initializeClient(sess.id).catch(e => console.error(`Failed to restore ${sess.id}`, e));
+        }
+    }
+};
+
+restoreSessions();
+
 // Initialize server
 server.listen(PORT, () => {
     console.log(`ZAPMRO CLOUD running on port ${PORT}`);
 });
+
 
