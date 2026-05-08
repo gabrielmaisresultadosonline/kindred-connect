@@ -26,45 +26,40 @@ app.use(express.static('Public'));
 const clients = new Map();
 const upload = multer({ dest: 'Public/uploads/' });
 
-// Database Helpers (JSON)
 const db = {
     load: (file) => {
         try {
-            if(!fs.existsSync(`./data/${file}.json`)) return [];
-            const data = fs.readFileSync(`./data/${file}.json`, 'utf8');
+            if(!fs.existsSync(\`./data/\${file}.json\`)) return [];
+            const data = fs.readFileSync(\`./data/\${file}.json\`, 'utf8');
             return data ? JSON.parse(data) : [];
         } catch (e) { return []; }
     },
     save: (file, data) => {
         if(!fs.existsSync('./data')) fs.mkdirSync('./data');
-        fs.writeFileSync(`./data/${file}.json`, JSON.stringify(data, null, 2));
+        fs.writeFileSync(\`./data/\${file}.json\`, JSON.stringify(data, null, 2));
     },
     ensure: (file, defaultVal = '[]') => { 
         if(!fs.existsSync('./data')) fs.mkdirSync('./data');
-        if(!fs.existsSync(`./data/${file}.json`)) fs.writeFileSync(`./data/${file}.json`, defaultVal); 
+        if(!fs.existsSync(\`./data/\${file}.json\`)) fs.writeFileSync(\`./data/\${file}.json\`, defaultVal); 
     }
 };
 
 ['flows', 'ai_config', 'scheduled_messages', 'kanban', 'tags', 'contacts', 'winback_campaigns', 'settings'].forEach(f => db.ensure(f));
 
-// --- IA LOGIC ---
 async function handleAI(sessionId, chatId, message, client) {
     const aiConfig = db.load('ai_config').find(c => c.sessionId === sessionId);
     if (!aiConfig || !aiConfig.enabled) return;
-
     try {
         const openai = new OpenAI({ apiKey: aiConfig.apiKey });
         const response = await openai.chat.completions.create({
             model: aiConfig.model || "gpt-3.5-turbo",
             messages: [{ role: "system", content: aiConfig.prompt || "Você é um assistente comercial profissional." }, { role: "user", content: message.body }],
         });
-
         const reply = response.choices[0].message.content;
         await client.sendMessage(chatId, reply);
     } catch (e) { console.error('AI Error:', e); }
 }
 
-// --- FLOW LOGIC ---
 async function handleFlows(sessionId, chatId, message, client) {
     const flows = db.load('flows').filter(f => f.sessionId === sessionId && f.active);
     for (const flow of flows) {
@@ -77,11 +72,10 @@ async function handleFlows(sessionId, chatId, message, client) {
     }
 }
 
-// --- WHATSAPP CORE ---
 async function getProfilePic(client, contactId) {
     try {
         const url = await client.getProfilePicUrl(contactId);
-        return url || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactId)}&background=random`;
+        return url || \`https://ui-avatars.com/api/?name=\${encodeURIComponent(contactId)}&background=random\`;
     } catch (e) { return 'https://ui-avatars.com/api/?name=User&background=ccc'; }
 }
 
@@ -91,7 +85,6 @@ app.post('/api/whatsapp/connect', async (req, res) => {
         const existing = clients.get(sessionId);
         if (existing.info) return res.json({ ok: true, status: 'CONNECTED' });
     }
-
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: sessionId }),
         puppeteer: { 
@@ -99,17 +92,11 @@ app.post('/api/whatsapp/connect', async (req, res) => {
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] 
         }
     });
-
     client.on('qr', async (qr) => {
         const qrImage = await qrcode.toDataURL(qr);
         io.to(sessionId).emit('qr', qrImage);
     });
-
-    client.on('ready', () => {
-        console.log(`[${sessionId}] Client is ready!`);
-        io.to(sessionId).emit('ready');
-    });
-
+    client.on('ready', () => io.to(sessionId).emit('ready'));
     client.on('message', async (msg) => {
         const chat = await msg.getChat();
         io.to(sessionId).emit('new-message', {
@@ -121,24 +108,20 @@ app.post('/api/whatsapp/connect', async (req, res) => {
             author: msg.author,
             chatName: chat.name
         });
-        
         if (!msg.fromMe) {
             handleFlows(sessionId, msg.from, msg, client);
             handleAI(sessionId, msg.from, msg, client);
         }
     });
-
     client.on('disconnected', () => {
         clients.delete(sessionId);
         io.to(sessionId).emit('disconnected');
     });
-
     client.initialize().catch(e => console.error(e));
     clients.set(sessionId, client);
     res.json({ ok: true });
 });
 
-// --- API ROUTES ---
 app.get('/api/whatsapp/chats', async (req, res) => {
     const { sessionId } = req.query;
     const client = clients.get(sessionId);
@@ -168,11 +151,9 @@ app.post('/api/whatsapp/send', async (req, res) => {
     } else res.status(404).json({ error: 'Client not connected' });
 });
 
-// Generic CRUD for DB
 app.get('/api/db/:file', (req, res) => res.json(db.load(req.params.file)));
 app.post('/api/db/:file', (req, res) => { db.save(req.params.file, req.body); res.json({ok:true}); });
 
-// --- AGENDAMENTOS ---
 setInterval(async () => {
     const now = Math.floor(Date.now() / 1000);
     let scheds = db.load('scheduled_messages');

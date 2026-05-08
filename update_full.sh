@@ -1,20 +1,23 @@
 #!/bin/bash
-PROJECT_DIR=~/kindred-connect
-cd $PROJECT_DIR
+# Script de Atualização Total ZAPMRO
+# Este script deve ser executado via terminal na sua VPS
 
-echo "🎨 Atualizando Layout Profissional e Corrigindo Backend..."
+echo "🚀 Iniciando Atualização Total..."
 
-# 1. Recriar Server/index.js (Completo com Tratamento de Erro)
-cat << 'SERVER_EOF' > Server/index.js
+# 1. Entrar na pasta do projeto
+cd ~/kindred-connect || { echo "❌ Erro: Pasta ~/kindred-connect não encontrada!"; exit 1; }
+
+# 2. Atualizar o Servidor (Server/index.js)
+cat << 'SERVER_CODE' > Server/index.js
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import path from 'path';
 import fs from 'fs';
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode';
+import { OpenAI } from 'openai';
 
 const app = express();
 const server = http.createServer(app);
@@ -26,165 +29,156 @@ app.use(express.json());
 app.use(express.static('Public'));
 
 const clients = new Map();
+const db = {
+    load: (f) => { try { return JSON.parse(fs.readFileSync(\`./data/\${f}.json\`)); } catch { return []; } },
+    save: (f, d) => { if(!fs.existsSync('./data')) fs.mkdirSync('./data'); fs.writeFileSync(\`./data/\${f}.json\`, JSON.stringify(d, null, 2)); },
+    ensure: (f) => { if(!fs.existsSync(\`./data/\${f}.json\`)) db.save(f, []); }
+};
 
-// Garantir que a pasta de dados existe
-if (!fs.existsSync('./data')) fs.mkdirSync('./data');
+['flows', 'ai_config', 'scheduled_messages', 'kanban'].forEach(db.ensure);
 
-app.post('/api/create-session', async (req, res) => {
-    try {
-        const { sessionId } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'Session ID is required' });
-
-        if (clients.has(sessionId)) {
-            return res.json({ ok: true, message: 'Session already exists' });
-        }
-
-        const client = new Client({
-            authStrategy: new LocalAuth({ clientId: sessionId }),
-            puppeteer: { 
-                headless: true, 
-                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-            }
-        });
-
-        client.on('qr', async (qr) => {
-            const qrImage = await qrcode.toDataURL(qr);
-            io.to(sessionId).emit('qr', qrImage);
-        });
-
-        client.on('ready', () => {
-            console.log('Client ready:', sessionId);
-            io.to(sessionId).emit('ready');
-        });
-
-        client.on('auth_failure', () => io.to(sessionId).emit('error', 'Falha na autenticação'));
-        
-        client.initialize().catch(err => {
-            console.error('Init Error:', err);
-            io.to(sessionId).emit('error', 'Erro ao iniciar Chrome');
-        });
-
-        clients.set(sessionId, client);
-        res.json({ ok: true });
-    } catch (error) {
-        console.error('Server Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-io.on('connection', (s) => {
-    s.on('join', (id) => {
-        s.join(id);
-        console.log('User joined session:', id);
+app.post('/api/whatsapp/connect', async (req, res) => {
+    const { sessionId } = req.body;
+    if (clients.has(sessionId)) return res.json({ ok: true });
+    
+    const client = new Client({
+        authStrategy: new LocalAuth({ clientId: sessionId }),
+        puppeteer: { headless: true, args: ['--no-sandbox'] }
     });
+
+    client.on('qr', async (qr) => io.to(sessionId).emit('qr', await qrcode.toDataURL(qr)));
+    client.on('ready', () => io.to(sessionId).emit('ready'));
+    client.on('message', async (msg) => {
+        io.to(sessionId).emit('new-message', { from: msg.from, body: msg.body, fromMe: msg.fromMe });
+        // Lógica de IA e Fluxos aqui
+    });
+
+    client.initialize().catch(console.error);
+    clients.set(sessionId, client);
+    res.json({ ok: true });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log('🚀 ZAPMRO ONLINE: http://167.88.42.133:3000');
+app.get('/api/whatsapp/chats', async (req, res) => {
+    const client = clients.get(req.query.sessionId);
+    if (!client || !client.info) return res.json([]);
+    const chats = await client.getChats();
+    res.json(chats.slice(0, 50).map(c => ({ id: c.id._serialized, name: c.name, pic: 'https://ui-avatars.com/api/?name=' + c.name })));
 });
-SERVER_EOF
 
-# 2. Recriar Public/index.html (Layout Profissional ZAPMRO)
-cat << 'HTML_EOF' > Public/index.html
+app.post('/api/whatsapp/send', async (req, res) => {
+    const { sessionId, to, message } = req.body;
+    const client = clients.get(sessionId);
+    if (client) { await client.sendMessage(to, message); res.json({ ok: true }); }
+    else res.status(404).send();
+});
+
+app.get('/api/db/:file', (req, res) => res.json(db.load(req.params.file)));
+app.post('/api/db/:file', (req, res) => { db.save(req.params.file, req.body); res.json({ok:true}); });
+
+server.listen(PORT, '0.0.0.0', () => console.log('🚀 ZAPMRO ONLINE'));
+SERVER_CODE
+
+# 3. Atualizar o Dashboard (Public/dashboard.html)
+cat << 'DASHBOARD_CODE' > Public/dashboard.html
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZAPMRO CLOUD | Conexão</title>
+    <title>ZAPMRO | Painel Profissional</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .card-zap { border: none; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 450px; overflow: hidden; }
-        .card-header { background: #128c7e; color: white; padding: 25px; text-align: center; border: none; }
-        .card-body { padding: 40px; background: white; text-align: center; }
-        .qr-container { background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 250px; display: flex; align-items: center; justify-content: center; margin-top: 20px; border: 2px dashed #ddd; }
-        .btn-zap { background: #25d366; color: white; border: none; padding: 12px 30px; border-radius: 30px; font-weight: bold; width: 100%; transition: 0.3s; }
-        .btn-zap:hover { background: #128c7e; transform: translateY(-2px); color: white; }
-        #loading { display: none; }
-        .status-badge { font-size: 0.8rem; padding: 5px 15px; border-radius: 20px; margin-top: 10px; display: inline-block; }
+        body { background: #f0f2f5; display: flex; height: 100vh; font-family: sans-serif; }
+        .sidebar { width: 260px; background: #111b21; color: white; display: flex; flex-direction: column; }
+        .menu-item { padding: 15px 25px; cursor: pointer; transition: 0.3s; }
+        .menu-item:hover, .menu-item.active { background: #128c7e; }
+        .main { flex: 1; display: flex; flex-direction: column; }
+        .content { flex: 1; padding: 20px; overflow-y: auto; }
+        .chat-container { display: flex; height: 100%; background: white; border-radius: 8px; overflow: hidden; }
+        .chat-list { width: 300px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .chat-view { flex: 1; display: flex; flex-direction: column; background: #e5ddd5; }
+        .msg-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 8px 12px; border-radius: 8px; max-width: 70%; }
+        .msg.sent { align-self: flex-end; background: #dcf8c6; }
+        .msg.received { align-self: flex-start; background: white; }
     </style>
 </head>
 <body>
-    <div class="card-zap">
-        <div class="card-header">
-            <h3><i class="fab fa-whatsapp me-2"></i>ZAPMRO CLOUD</h3>
-            <p class="mb-0">WhatsApp Multi-Device Connection</p>
+    <div class="sidebar">
+        <div class="p-4 text-center"><h4>ZAPMRO</h4></div>
+        <div class="menu-item active" onclick="tab('chats')"><i class="fas fa-comments"></i> Conversas</div>
+        <div class="menu-item" onclick="tab('kanban')"><i class="fas fa-columns"></i> CRM Kanban</div>
+        <div class="menu-item" onclick="tab('ai')"><i class="fas fa-robot"></i> Inteligência AI</div>
+        <div class="menu-item mt-auto" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</div>
+    </div>
+    <div class="main">
+        <div class="bg-white p-3 border-bottom d-flex justify-content-between">
+            <h5 id="title">Conversas</h5>
+            <button class="btn btn-sm btn-success" onclick="conn()">Conectar WhatsApp</button>
         </div>
-        <div class="card-body">
-            <h5 class="mb-4">Conectar Novo Aparelho</h5>
-            <button id="btnConnect" onclick="startSession()" class="btn-zap">
-                <i class="fas fa-qrcode me-2"></i>GERAR QR CODE
-            </button>
-            
-            <div id="loading" class="mt-3">
-                <div class="spinner-border text-success" role="status"></div>
-                <p class="mt-2 text-muted">Iniciando Chrome e Gerando QR...</p>
+        <div class="content" id="main-content">
+            <!-- Chat View Default -->
+            <div id="chats-view" class="chat-container">
+                <div id="chat-list" class="chat-list"></div>
+                <div class="chat-view">
+                    <div id="msgs" class="msg-box"></div>
+                    <div class="p-3 bg-light d-flex gap-2">
+                        <input type="text" id="msg-inp" class="form-control" placeholder="Mensagem...">
+                        <button onclick="send()" class="btn btn-success">Enviar</button>
+                    </div>
+                </div>
             </div>
+        </div>
+    </div>
 
-            <div class="qr-container" id="qr-box">
-                <p id="qr-placeholder" class="text-muted">Clique no botão acima para começar</p>
-                <img id="qr-img" style="display:none; width: 100%;">
-            </div>
-
-            <div id="status-box"></div>
+    <div id="qr-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:99; align-items:center; justify-content:center;">
+        <div class="bg-white p-5 rounded text-center">
+            <h5>Escaneie o QR Code</h5>
+            <img id="qr-img" style="width:250px; margin:20px 0;">
+            <br><button class="btn btn-secondary" onclick="document.getElementById('qr-modal').style.display='none'">Fechar</button>
         </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
+        const user = JSON.parse(localStorage.getItem('user'));
+        const sid = user.id;
         const socket = io();
-        const sessionId = 'session_' + Math.random().toString(36).substr(2, 9);
-        
-        socket.emit('join', sessionId);
+        let active = null;
 
-        async function startSession() {
-            document.getElementById('btnConnect').style.display = 'none';
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('qr-placeholder').style.display = 'none';
+        socket.emit('join', sid);
+        socket.on('qr', src => { document.getElementById('qr-modal').style.display='flex'; document.getElementById('qr-img').src=src; });
+        socket.on('ready', () => { document.getElementById('qr-modal').style.display='none'; loadChats(); });
+        socket.on('new-message', m => { if(m.from === active || m.fromMe) append(m); });
 
-            try {
-                const response = await fetch('/api/create-session', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId })
-                });
-                
-                if (!response.ok) throw new Error('Falha no servidor');
-                
-            } catch (err) {
-                alert('Erro ao conectar com o servidor. Verifique o console.');
-                document.getElementById('btnConnect').style.display = 'block';
-                document.getElementById('loading').style.display = 'none';
-            }
+        function conn() { fetch('/api/whatsapp/connect', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid})}); }
+        async function loadChats() {
+            const r = await fetch('/api/whatsapp/chats?sessionId='+sid);
+            const chats = await r.json();
+            document.getElementById('chat-list').innerHTML = chats.map(c => \`<div class="p-3 border-bottom cursor-pointer" onclick="sel('\${c.id}', '\${c.name}')">\${c.name}</div>\`).join('');
         }
-
-        socket.on('qr', (src) => {
-            document.getElementById('loading').style.display = 'none';
-            const img = document.getElementById('qr-img');
-            img.src = src;
-            img.style.display = 'block';
-            document.getElementById('status-box').innerHTML = '<span class="status-badge bg-info text-white">QR Code Gerado! Escaneie agora.</span>';
-        });
-
-        socket.on('ready', () => {
-            document.getElementById('qr-box').innerHTML = '<div class="text-success"><i class="fas fa-check-circle fa-5x"></i><h4 class="mt-3">Conectado com Sucesso!</h4></div>';
-            document.getElementById('status-box').innerHTML = '<span class="status-badge bg-success text-white">Online</span>';
-        });
-
-        socket.on('error', (msg) => {
-            alert('Erro: ' + msg);
-            location.reload();
-        });
+        function sel(id, name) { active = id; document.getElementById('msgs').innerHTML = ''; }
+        async function send() {
+            const m = document.getElementById('msg-inp').value;
+            await fetch('/api/whatsapp/send', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid, to:active, message:m})});
+            append({body:m, fromMe:true});
+            document.getElementById('msg-inp').value = '';
+        }
+        function append(m) {
+            const d = document.createElement('div');
+            d.className = 'msg ' + (m.fromMe ? 'sent' : 'received');
+            d.innerText = m.body;
+            document.getElementById('msgs').appendChild(d);
+            document.getElementById('msgs').scrollTop = document.getElementById('msgs').scrollHeight;
+        }
+        function logout() { localStorage.clear(); window.location.href='index.html'; }
     </script>
 </body>
 </html>
-HTML_EOF
+DASHBOARD_CODE
 
-# 3. Reiniciar PM2
-pm2 delete zapmro 2>/dev/null
-pm2 start Server/index.js --name "zapmro"
+# 4. Reiniciar com PM2
+pm2 restart zapmro || pm2 start Server/index.js --name "zapmro"
 pm2 save
 
-echo "✅ LAYOUT E BACKEND ATUALIZADOS!"
+echo "✅ TUDO ATUALIZADO E RODANDO!"
