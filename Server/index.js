@@ -349,6 +349,17 @@ io.on('connection', (socket) => {
         socket.emit('flows-list', flows[sessionId]);
     });
 
+    socket.on('send-message', async ({ sessionId, chatId, content }) => {
+        const client = clients.get(sessionId);
+        if (client) {
+            try {
+                await client.sendMessage(chatId, content);
+            } catch (err) {
+                console.error('Error sending message:', err);
+            }
+        }
+    });
+
 
 // Restore sessions on startup
 const restoreSessions = async () => {
