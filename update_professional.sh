@@ -1,43 +1,52 @@
 #!/bin/bash
-PROJECT_DIR=~/kindred-connect
-cd $PROJECT_DIR
+# Script de Correção e Atualização Profissional ZAPMRO
+echo "🚀 Corrigindo e Atualizando para v3.0 Profissional..."
+cd ~/kindred-connect
 
-echo "🛠️ Transformando ZAPMRO em Ferramenta Profissional..."
-
-# 1. Atualizar Server/index.js para suportar Supabase e Dashboard Completa
-cat << 'SERVER_EOF' > Server/index.js
+# 1. Atualizar o Servidor (Backend) - Correção de Sintaxe
+cat << 'SERVER_CODE' > Server/index.js
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import path from 'path';
 import fs from 'fs';
 import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth, MessageMedia } = pkg;
+const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode';
-import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js';
-
-dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = 3000;
 
-// Supabase Setup
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY);
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static('Public'));
 
 const clients = new Map();
+const db = {
+    load: (f) => { 
+        try { 
+            const path = './data/' + f + '.json';
+            if(!fs.existsSync(path)) return [];
+            return JSON.parse(fs.readFileSync(path, 'utf8')); 
+        } catch (e) { return []; } 
+    },
+    save: (f, d) => { 
+        if(!fs.existsSync('./data')) fs.mkdirSync('./data'); 
+        fs.writeFileSync('./data/' + f + '.json', JSON.stringify(d, null, 2)); 
+    },
+    ensure: (f) => { 
+        const path = './data/' + f + '.json';
+        if(!fs.existsSync(path)) db.save(f, []); 
+    }
+};
 
-// --- WhatsApp Logic ---
-async function getClient(sessionId) {
-    if (clients.has(sessionId)) return clients.get(sessionId);
-    
+['flows', 'ai_config', 'scheduled_messages', 'kanban'].forEach(db.ensure);
+
+async function initWhatsApp(sessionId) {
+    if (clients.has(sessionId)) return;
+    console.log('Iniciando sessão:', sessionId);
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: sessionId }),
         puppeteer: { 
@@ -47,285 +56,180 @@ async function getClient(sessionId) {
     });
 
     client.on('qr', async (qr) => {
-        const qrImage = await qrcode.toDataURL(qr);
-        io.to(sessionId).emit('qr', qrImage);
+        const src = await qrcode.toDataURL(qr);
+        io.to(sessionId).emit('qr', src);
     });
 
     client.on('ready', () => {
+        console.log('WhatsApp Pronto:', sessionId);
         io.to(sessionId).emit('ready');
-        console.log('WhatsApp Ready for session:', sessionId);
     });
 
     client.on('message', async (msg) => {
-        // Enviar para o Dashboard em tempo real
-        io.to(sessionId).emit('new-message', {
-            from: msg.from,
-            body: msg.body,
-            timestamp: msg.timestamp,
-            fromMe: msg.fromMe
-        });
+        io.to(sessionId).emit('new-message', { from: msg.from, body: msg.body, fromMe: msg.fromMe });
     });
 
+    client.initialize().catch(err => console.error('Erro Init:', sessionId, err));
     clients.set(sessionId, client);
-    await client.initialize();
-    return client;
 }
-
-// --- API Routes ---
 
 app.post('/api/whatsapp/connect', async (req, res) => {
     const { sessionId } = req.body;
-    await getClient(sessionId);
+    initWhatsApp(sessionId);
     res.json({ ok: true });
+});
+
+app.get('/api/whatsapp/chats', async (req, res) => {
+    const client = clients.get(req.query.sessionId);
+    if (!client || !client.info) return res.json([]);
+    try {
+        const chats = await client.getChats();
+        res.json(chats.slice(0, 50).map(c => ({ 
+            id: c.id._serialized, 
+            name: c.name || c.id.user, 
+            pic: 'https://ui-avatars.com/api/?name=' + encodeURIComponent(c.name || 'U') 
+        })));
+    } catch(e) { res.json([]); }
 });
 
 app.post('/api/whatsapp/send', async (req, res) => {
     const { sessionId, to, message } = req.body;
     const client = clients.get(sessionId);
-    if (!client) return res.status(404).json({ error: 'Sessão não iniciada' });
-    
-    await client.sendMessage(to, message);
-    res.json({ ok: true });
+    if (client) { 
+        await client.sendMessage(to, message); 
+        res.json({ ok: true }); 
+    } else res.status(404).json({ error: 'Sessão não ativa' });
 });
 
-app.get('/api/whatsapp/chats', async (req, res) => {
-    const { sessionId } = req.query;
-    const client = clients.get(sessionId);
-    if (!client) return res.status(404).json({ error: 'Sessão não iniciada' });
-    
-    const chats = await client.getChats();
-    res.json(chats.map(c => ({
-        id: c.id._serialized,
-        name: c.name,
-        unreadCount: c.unreadCount
-    })));
-});
-
-io.on('connection', (s) => {
-    s.on('join', (id) => s.join(id));
-});
+app.get('/api/db/:file', (req, res) => res.json(db.load(req.params.file)));
+app.post('/api/db/:file', (req, res) => { db.save(req.params.file, req.body); res.json({ok:true}); });
 
 server.listen(PORT, '0.0.0.0', () => {
-    console.log('🚀 ZAPMRO PROFESSIONAL ONLINE: http://167.88.42.133:3000');
+    console.log('🚀 ZAPMRO ONLINE NA PORTA ' + PORT);
 });
-SERVER_EOF
+SERVER_CODE
 
-# 2. Criar Public/index.html (Página de Login/Cadastro Profissional)
-cat << 'HTML_EOF' > Public/index.html
+# 2. Atualizar o Dashboard (Frontend)
+cat << 'DASHBOARD_CODE' > Public/dashboard.html
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZAPMRO CLOUD | Login Profissional</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        body { background: #f0f2f5; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        .auth-card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        .btn-zap { background: #128c7e; color: white; border-radius: 30px; padding: 12px; font-weight: bold; width: 100%; border: none; }
-        .btn-zap:hover { background: #075e54; color: white; }
-        .logo { color: #128c7e; text-align: center; margin-bottom: 30px; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="auth-card">
-        <div class="logo"><h2>ZAPMRO CLOUD</h2></div>
-        <div id="auth-form">
-            <div class="mb-3">
-                <input type="email" id="email" class="form-control" placeholder="Seu E-mail">
-            </div>
-            <div class="mb-3">
-                <input type="password" id="password" class="form-control" placeholder="Sua Senha">
-            </div>
-            <button onclick="handleAuth()" id="btnAuth" class="btn-zap">ENTRAR / CADASTRAR</button>
-        </div>
-    </div>
-
-    <script>
-        const supabaseUrl = 'https://tuwokddiyltxsmcmzbaz.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1d29rZGRpeWx0eHNtY216YmF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxOTc5MjQsImV4cCI6MjA5Mzc3MzkyNH0.m-b9PvlWfMYewSLHD2L9VjJuDXBJq60DDqJme6UNdrI';
-        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
-
-        async function handleAuth() {
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const btn = document.getElementById('btnAuth');
-            btn.disabled = true;
-
-            const { data: loginData, error: loginError } = await supabaseClient.auth.signInWithPassword({ email, password });
-            
-            if (loginError) {
-                const { data: regData, error: regError } = await supabaseClient.auth.signUp({ email, password });
-                if (regError) {
-                    alert('Erro: ' + regError.message);
-                    btn.disabled = false;
-                    return;
-                }
-                alert('Conta criada! Verifique seu email ou tente logar.');
-                btn.disabled = false;
-            } else {
-                localStorage.setItem('user', JSON.stringify(loginData.user));
-                window.location.href = 'dashboard.html';
-            }
-        }
-    </script>
-</body>
-</html>
-HTML_EOF
-
-# 3. Criar Public/dashboard.html (Dashboard CRM Profissional)
-cat << 'DASH_EOF' > Public/dashboard.html
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Dashboard ZAPMRO</title>
+    <title>ZAPMRO | Painel Profissional</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background: #f0f2f5; height: 100vh; display: flex; overflow: hidden; }
-        .sidebar { width: 300px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
-        .content { flex: 1; background: #e5ddd5; display: flex; flex-direction: column; }
-        .chat-list { overflow-y: auto; flex: 1; }
-        .chat-item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; transition: 0.2s; }
-        .chat-item:hover { background: #f5f5f5; }
-        .chat-header { background: #f0f2f5; padding: 10px 20px; border-bottom: 1px solid #ddd; display: flex; align-items: center; }
-        .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        .msg { padding: 8px 15px; border-radius: 8px; max-width: 70%; font-size: 0.9rem; }
+        :root { --primary: #128c7e; --dark: #111b21; --bg: #f0f2f5; }
+        body { background: var(--bg); display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; margin: 0; }
+        .sidebar { width: 260px; background: var(--dark); color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+        .menu-item { padding: 15px 25px; cursor: pointer; transition: 0.3s; display: flex; align-items: center; gap: 15px; }
+        .menu-item:hover, .menu-item.active { background: var(--primary); color: white; }
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .content-tab { display: none; height: 100%; flex-direction: column; }
+        .content-tab.active { display: flex; }
+        .chat-container { display: flex; height: 100%; background: white; }
+        .chat-list { width: 350px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .chat-view { flex: 1; display: flex; flex-direction: column; background: #e5ddd5; }
+        .msg-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 8px 12px; border-radius: 8px; max-width: 70%; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
         .msg.sent { align-self: flex-end; background: #dcf8c6; }
         .msg.received { align-self: flex-start; background: white; }
-        .input-area { background: #f0f2f5; padding: 15px; display: flex; gap: 10px; }
-        .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 9999; color: white; flex-direction: column; }
+        .qr-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; display: none; align-items: center; justify-content: center; color: white; text-align: center; }
     </style>
 </head>
 <body>
-    <div id="qr-overlay" class="qr-overlay">
-        <h3>Escaneie para Conectar</h3>
-        <div id="qr-container" style="background: white; padding: 20px; border-radius: 10px;">
-            <img id="qr-img" style="width: 250px;">
+    <div id="qr-modal" class="qr-modal">
+        <div class="bg-white p-5 rounded text-dark">
+            <h3>Conectar WhatsApp</h3>
+            <div id="qr-loading" class="my-4"><div class="spinner-border text-primary"></div><p class="mt-2">Gerando QR Code...</p></div>
+            <img id="qr-img" style="display:none; width:250px; margin-bottom:20px; border:1px solid #ddd; padding:10px;">
+            <p class="text-muted">Abra o WhatsApp > Configurações > Aparelhos Conectados</p>
+            <button class="btn btn-secondary" onclick="document.getElementById('qr-modal').style.display='none'">Fechar</button>
         </div>
-        <p class="mt-3">Aguardando leitura...</p>
     </div>
-
     <div class="sidebar">
-        <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
-            <h5 class="mb-0 text-success">ZAPMRO</h5>
-            <button onclick="startConnection()" class="btn btn-sm btn-outline-success"><i class="fas fa-plus"></i></button>
-        </div>
-        <div id="chat-list" class="chat-list">
-            <div class="p-3 text-center text-muted">Carregando chats...</div>
-        </div>
+        <div class="p-4 text-center"><h3>ZAPMRO</h3></div>
+        <div class="menu-item active" onclick="switchTab('chats')"><i class="fas fa-comments"></i> Conversas</div>
+        <div class="menu-item" onclick="switchTab('kanban')"><i class="fas fa-columns"></i> CRM Kanban</div>
+        <div class="menu-item" onclick="switchTab('ai')"><i class="fas fa-robot"></i> Inteligência IA</div>
+        <div class="menu-item mt-auto" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</div>
     </div>
-
-    <div class="content">
-        <div id="chat-header" class="chat-header">
-            <h6 id="current-chat-name" class="mb-0">Selecione uma conversa</h6>
+    <div class="main">
+        <div class="bg-white p-3 border-bottom d-flex justify-content-between align-items-center">
+            <h5 id="tab-title" class="m-0">Central de Mensagens</h5>
+            <button class="btn btn-success btn-sm" onclick="connect()">CONECTAR WHATSAPP</button>
         </div>
-        <div id="messages" class="messages"></div>
-        <div class="input-area">
-            <input type="text" id="msg-input" class="form-control" placeholder="Digite uma mensagem...">
-            <button onclick="sendMsg()" class="btn btn-success"><i class="fas fa-paper-plane"></i></button>
+        <div id="tab-chats" class="content-tab active">
+            <div class="chat-container">
+                <div id="chat-list" class="chat-list"></div>
+                <div class="chat-view"><div id="msgs" class="msg-box"></div><div class="p-3 bg-light d-flex gap-2"><input type="text" id="msg-inp" class="form-control" placeholder="Mensagem..."><button onclick="send()" class="btn btn-success"><i class="fas fa-paper-plane"></i></button></div></div>
+            </div>
         </div>
+        <div id="tab-kanban" class="content-tab p-4">
+            <h3>CRM Kanban</h3>
+            <div class="row g-3 mt-2">
+                <div class="col-md-4"><div class="card p-3 bg-light"><h6>Lead</h6><div id="kb-todo"></div></div></div>
+                <div class="col-md-4"><div class="card p-3 bg-light"><h6>Em Atendimento</h6><div id="kb-doing"></div></div></div>
+                <div class="col-md-4"><div class="card p-3 bg-light"><h6>Finalizado</h6><div id="kb-done"></div></div></div>
+            </div>
+        </div>
+        <div id="tab-ai" class="content-tab p-4"><div class="card p-4 shadow-sm"><h3>Inteligência Artificial</h3><hr><div class="mb-3"><label>API Key OpenAI</label><input type="password" id="ai-key" class="form-control"></div><button class="btn btn-primary">Salvar</button></div></div>
     </div>
-
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const user = JSON.parse(localStorage.getItem('user'));
-        if (!user) window.location.href = 'index.html';
-
+        const sid = user.id;
         const socket = io();
-        const sessionId = user.id;
-        let activeChat = null;
-
-        socket.emit('join', sessionId);
-
-        async function startConnection() {
-            document.getElementById('qr-overlay').style.display = 'flex';
-            await fetch('/api/whatsapp/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId })
-            });
+        let active = null;
+        socket.emit('join', sid);
+        socket.on('qr', src => { 
+            document.getElementById('qr-modal').style.display='flex'; 
+            document.getElementById('qr-loading').style.display='none';
+            document.getElementById('qr-img').style.display='block';
+            document.getElementById('qr-img').src=src; 
+        });
+        socket.on('ready', () => { document.getElementById('qr-modal').style.display='none'; loadChats(); });
+        socket.on('new-message', m => { if(m.from === active || m.fromMe) append(m); });
+        function switchTab(t) {
+            document.querySelectorAll('.content-tab').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-'+t).classList.add('active');
+            event.currentTarget.classList.add('active');
         }
-
-        socket.on('qr', (src) => {
-            document.getElementById('qr-img').src = src;
-        });
-
-        socket.on('ready', () => {
-            document.getElementById('qr-overlay').style.display = 'none';
-            loadChats();
-        });
-
+        function connect() { 
+            document.getElementById('qr-modal').style.display='flex';
+            document.getElementById('qr-loading').style.display='block';
+            document.getElementById('qr-img').style.display='none';
+            fetch('/api/whatsapp/connect', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid})}); 
+        }
         async function loadChats() {
-            const r = await fetch(`/api/whatsapp/chats?sessionId=${sessionId}`);
+            const r = await fetch('/api/whatsapp/chats?sessionId='+sid);
             const chats = await r.json();
-            const list = document.getElementById('chat-list');
-            list.innerHTML = '';
-            chats.forEach(c => {
-                const div = document.createElement('div');
-                div.className = 'chat-item';
-                div.innerHTML = `<strong>${c.name || c.id}</strong>`;
-                div.onclick = () => selectChat(c.id, c.name);
-                list.appendChild(div);
-            });
+            document.getElementById('chat-list').innerHTML = chats.map(c => `<div class="p-3 border-bottom cursor-pointer" onclick="sel('${c.id}', '${c.name}')"><b>${c.name||c.id}</b></div>`).join('');
         }
-
-        function selectChat(id, name) {
-            activeChat = id;
-            document.getElementById('current-chat-name').innerText = name || id;
-            document.getElementById('messages').innerHTML = '';
+        function sel(id, name) { active = id; document.getElementById('msgs').innerHTML = ''; document.getElementById('tab-title').innerText = 'Chat: ' + name; }
+        async function send() {
+            const m = document.getElementById('msg-inp').value;
+            if(!m || !active) return;
+            fetch('/api/whatsapp/send', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid, to:active, message:m})});
+            append({body:m, fromMe:true});
+            document.getElementById('msg-inp').value = '';
         }
-
-        async function sendMsg() {
-            const input = document.getElementById('msg-input');
-            const message = input.value;
-            if (!message || !activeChat) return;
-
-            await fetch('/api/whatsapp/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, to: activeChat, message })
-            });
-
-            appendMsg({ body: message, fromMe: true });
-            input.value = '';
+        function append(m) {
+            const d = document.createElement('div');
+            d.className = 'msg ' + (m.fromMe ? 'sent' : 'received');
+            d.innerText = m.body;
+            document.getElementById('msgs').appendChild(d);
+            document.getElementById('msgs').scrollTop = document.getElementById('msgs').scrollHeight;
         }
-
-        socket.on('new-message', (msg) => {
-            if (msg.from === activeChat || msg.fromMe) {
-                appendMsg(msg);
-            }
-        });
-
-        function appendMsg(msg) {
-            const div = document.createElement('div');
-            div.className = `msg ${msg.fromMe ? 'sent' : 'received'}`;
-            div.innerText = msg.body;
-            document.getElementById('messages').appendChild(div);
-            const container = document.getElementById('messages');
-            container.scrollTop = container.scrollHeight;
-        }
+        function logout() { localStorage.clear(); window.location.href='index.html'; }
+        loadChats();
     </script>
 </body>
 </html>
-DASH_EOF
+DASHBOARD_CODE
 
-# 4. Finalização e Restart
-# Garantir que as pastas existem na VPS
-mkdir -p $PROJECT_DIR/Server
-mkdir -p $PROJECT_DIR/Public
-
-# Instalar pm2 global se não existir
-if ! command -v pm2 &> /dev/null
-then
-    sudo npm install -g pm2
-fi
-
-# Reiniciar
-pm2 delete zapmro 2>/dev/null
-pm2 start Server/index.js --name "zapmro"
+# 3. Reiniciar PM2
+pm2 restart zapmro || pm2 start Server/index.js --name "zapmro"
 pm2 save
-echo "✅ ZAPMRO PROFISSIONAL INSTALADO COM SUCESSO!"
-pm2 logs zapmro
+echo "✅ CORRIGIDO E ONLINE!"

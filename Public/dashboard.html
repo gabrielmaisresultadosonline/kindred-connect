@@ -34,7 +34,6 @@
             <button class="btn btn-secondary" onclick="document.getElementById('qr-modal').style.display='none'">Fechar</button>
         </div>
     </div>
-
     <div class="sidebar">
         <div class="p-4 text-center"><h3>ZAPMRO</h3></div>
         <div class="menu-item active" onclick="switchTab('chats')"><i class="fas fa-comments"></i> Conversas</div>
@@ -42,28 +41,17 @@
         <div class="menu-item" onclick="switchTab('ai')"><i class="fas fa-robot"></i> Inteligência IA</div>
         <div class="menu-item mt-auto" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</div>
     </div>
-
     <div class="main">
         <div class="bg-white p-3 border-bottom d-flex justify-content-between align-items-center">
             <h5 id="tab-title" class="m-0">Central de Mensagens</h5>
             <button class="btn btn-success btn-sm" onclick="connect()">CONECTAR WHATSAPP</button>
         </div>
-
-        <!-- ABA CHATS -->
         <div id="tab-chats" class="content-tab active">
             <div class="chat-container">
                 <div id="chat-list" class="chat-list"></div>
-                <div class="chat-view">
-                    <div id="msgs" class="msg-box"></div>
-                    <div class="p-3 bg-light d-flex gap-2">
-                        <input type="text" id="msg-inp" class="form-control" placeholder="Digite uma mensagem...">
-                        <button onclick="send()" class="btn btn-success"><i class="fas fa-paper-plane"></i></button>
-                    </div>
-                </div>
+                <div class="chat-view"><div id="msgs" class="msg-box"></div><div class="p-3 bg-light d-flex gap-2"><input type="text" id="msg-inp" class="form-control" placeholder="Mensagem..."><button onclick="send()" class="btn btn-success"><i class="fas fa-paper-plane"></i></button></div></div>
             </div>
         </div>
-
-        <!-- ABA KANBAN -->
         <div id="tab-kanban" class="content-tab p-4">
             <h3>CRM Kanban</h3>
             <div class="row g-3 mt-2">
@@ -72,26 +60,14 @@
                 <div class="col-md-4"><div class="card p-3 bg-light"><h6>Finalizado</h6><div id="kb-done"></div></div></div>
             </div>
         </div>
-
-        <!-- ABA AI -->
-        <div id="tab-ai" class="content-tab p-4">
-            <div class="card p-4 shadow-sm">
-                <h3>Agente de Inteligência Artificial</h3>
-                <hr>
-                <div class="mb-3"><label>Chave API OpenAI</label><input type="password" id="ai-key" class="form-control"></div>
-                <div class="mb-3"><label>Prompt de Instrução</label><textarea id="ai-prompt" class="form-control" rows="5"></textarea></div>
-                <button class="btn btn-primary" onclick="saveAI()">Salvar Configurações</button>
-            </div>
-        </div>
+        <div id="tab-ai" class="content-tab p-4"><div class="card p-4 shadow-sm"><h3>Inteligência Artificial</h3><hr><div class="mb-3"><label>API Key OpenAI</label><input type="password" id="ai-key" class="form-control"></div><button class="btn btn-primary">Salvar</button></div></div>
     </div>
-
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const user = JSON.parse(localStorage.getItem('user'));
         const sid = user.id;
         const socket = io();
         let active = null;
-
         socket.emit('join', sid);
         socket.on('qr', src => { 
             document.getElementById('qr-modal').style.display='flex'; 
@@ -99,35 +75,26 @@
             document.getElementById('qr-img').style.display='block';
             document.getElementById('qr-img').src=src; 
         });
-        socket.on('ready', () => { 
-            document.getElementById('qr-modal').style.display='none'; 
-            loadChats(); 
-        });
+        socket.on('ready', () => { document.getElementById('qr-modal').style.display='none'; loadChats(); });
         socket.on('new-message', m => { if(m.from === active || m.fromMe) append(m); });
-
         function switchTab(t) {
             document.querySelectorAll('.content-tab').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
             document.getElementById('tab-'+t).classList.add('active');
             event.currentTarget.classList.add('active');
-            document.getElementById('tab-title').innerText = t === 'chats' ? 'Central de Mensagens' : (t === 'kanban' ? 'CRM Kanban' : 'Inteligência Artificial');
         }
-
         function connect() { 
             document.getElementById('qr-modal').style.display='flex';
             document.getElementById('qr-loading').style.display='block';
             document.getElementById('qr-img').style.display='none';
             fetch('/api/whatsapp/connect', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid})}); 
         }
-
         async function loadChats() {
             const r = await fetch('/api/whatsapp/chats?sessionId='+sid);
             const chats = await r.json();
-            document.getElementById('chat-list').innerHTML = chats.map(c => `<div class="p-3 border-bottom cursor-pointer hover-bg" onclick="sel('${c.id}', '${c.name}')"><b>${c.name||c.id}</b></div>`).join('');
+            document.getElementById('chat-list').innerHTML = chats.map(c => `<div class="p-3 border-bottom cursor-pointer" onclick="sel('${c.id}', '${c.name}')"><b>${c.name||c.id}</b></div>`).join('');
         }
-
         function sel(id, name) { active = id; document.getElementById('msgs').innerHTML = ''; document.getElementById('tab-title').innerText = 'Chat: ' + name; }
-        
         async function send() {
             const m = document.getElementById('msg-inp').value;
             if(!m || !active) return;
@@ -135,7 +102,6 @@
             append({body:m, fromMe:true});
             document.getElementById('msg-inp').value = '';
         }
-
         function append(m) {
             const d = document.createElement('div');
             d.className = 'msg ' + (m.fromMe ? 'sent' : 'received');
@@ -143,10 +109,7 @@
             document.getElementById('msgs').appendChild(d);
             document.getElementById('msgs').scrollTop = document.getElementById('msgs').scrollHeight;
         }
-
         function logout() { localStorage.clear(); window.location.href='index.html'; }
-        
-        // Carrega inicial
         loadChats();
     </script>
 </body>
