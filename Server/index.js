@@ -256,6 +256,18 @@ app.get('/api/active-sessions', requireUser, (req, res) => {
     res.json(sessions.filter(s => clients.has(s.id)));
 });
 
+// --- Google Contacts Sync (Placeholder) ---
+app.get('/api/google/auth-url', requireUser, (req, res) => {
+    // This would typically use googleapis library to generate an auth URL
+    res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${process.env.GOOGLE_REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/contacts.readonly` });
+});
+
+app.post('/api/google/sync', requireUser, async (req, res) => {
+    const { code } = req.body;
+    // Here you would exchange the code for tokens and fetch contacts
+    res.json({ success: true, message: 'Contacts sync initiated' });
+});
+
 // ... Socket.IO Handlers ...
 io.on('connection', (socket) => {
     socket.on('bind-session', (sessionId) => {
