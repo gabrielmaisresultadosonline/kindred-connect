@@ -145,7 +145,7 @@ cat << 'HTML_EOF' > Public/index.html
     <script>
         const supabaseUrl = 'https://tuwokddiyltxsmcmzbaz.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1d29rZGRpeWx0eHNtY216YmF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxOTc5MjQsImV4cCI6MjA5Mzc3MzkyNH0.m-b9PvlWfMYewSLHD2L9VjJuDXBJq60DDqJme6UNdrI';
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
         async function handleAuth() {
             const email = document.getElementById('email').value;
@@ -153,12 +153,10 @@ cat << 'HTML_EOF' > Public/index.html
             const btn = document.getElementById('btnAuth');
             btn.disabled = true;
 
-            // Tentar login
-            const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+            const { data: loginData, error: loginError } = await supabaseClient.auth.signInWithPassword({ email, password });
             
             if (loginError) {
-                // Tentar cadastro se login falhar
-                const { data: regData, error: regError } = await supabase.auth.signUp({ email, password });
+                const { data: regData, error: regError } = await supabaseClient.auth.signUp({ email, password });
                 if (regError) {
                     alert('Erro: ' + regError.message);
                     btn.disabled = false;
@@ -315,6 +313,17 @@ cat << 'DASH_EOF' > Public/dashboard.html
 DASH_EOF
 
 # 4. Finalização e Restart
+# Garantir que as pastas existem na VPS
+mkdir -p $PROJECT_DIR/Server
+mkdir -p $PROJECT_DIR/Public
+
+# Instalar pm2 global se não existir
+if ! command -v pm2 &> /dev/null
+then
+    sudo npm install -g pm2
+fi
+
+# Reiniciar
 pm2 delete zapmro 2>/dev/null
 pm2 start Server/index.js --name "zapmro"
 pm2 save
