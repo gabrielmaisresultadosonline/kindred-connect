@@ -129,5 +129,5 @@ sudo npm install -g pm2
 pm2 delete zapmro 2>/dev/null
 pm2 start Server/index.js --name "zapmro"
 pm2 save
-echo "✅ TUDO PRONTO! Acesse http://SEU_IP:3000"
+echo "✅ TUDO PRONTO! Acesse http://167.88.42.133:3000"
 pm2 logs zapmro
