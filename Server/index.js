@@ -176,9 +176,25 @@ async function handleIncomingMessage(sessionId, msg) {
     // Emit to UI
     io.to(sessionId).emit('new-message', { chatId: msg.from, message: msg });
 
-    // AI Processing
+    // --- Automation Flows ---
+    const flows = (readJson('flows.json') || {})[sessionId] || [];
+    const triggerFlow = flows.find(f => 
+        f.trigger && msg.body.toLowerCase().includes(f.trigger.toLowerCase())
+    );
+
+    if (triggerFlow) {
+        for (const action of triggerFlow.actions) {
+            if (action.type === 'message') {
+                await clients.get(sessionId).sendMessage(msg.from, action.content);
+            } else if (action.type === 'wait') {
+                await new Promise(r => setTimeout(r, action.duration * 1000));
+            }
+        }
+    }
+
+    // --- AI Processing ---
     const aiConfig = (readJson('ai_config.json') || {})[sessionId];
-    if (aiConfig && aiConfig.enabled && !msg.fromMe) {
+    if (aiConfig && aiConfig.enabled && !msg.fromMe && !triggerFlow) {
         processAiMessage(sessionId, msg.from, clients.get(sessionId), msg.body);
     }
 }
@@ -238,6 +254,18 @@ app.post('/api/create-session', requireUser, async (req, res) => {
 app.get('/api/active-sessions', requireUser, (req, res) => {
     const sessions = readJson('sessions.json') || [];
     res.json(sessions.filter(s => clients.has(s.id)));
+});
+
+// --- Google Contacts Sync (Placeholder) ---
+app.get('/api/google/auth-url', requireUser, (req, res) => {
+    // This would typically use googleapis library to generate an auth URL
+    res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${process.env.GOOGLE_REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/contacts.readonly` });
+});
+
+app.post('/api/google/sync', requireUser, async (req, res) => {
+    const { code } = req.body;
+    // Here you would exchange the code for tokens and fetch contacts
+    res.json({ success: true, message: 'Contacts sync initiated' });
 });
 
 // ... Socket.IO Handlers ...
@@ -331,6 +359,17 @@ io.on('connection', (socket) => {
         else flows[sessionId].push(flow);
         writeJson('flows.json', flows);
         socket.emit('flows-list', flows[sessionId]);
+    });
+
+    socket.on('send-message', async ({ sessionId, chatId, content }) => {
+        const client = clients.get(sessionId);
+        if (client) {
+            try {
+                await client.sendMessage(chatId, content);
+            } catch (err) {
+                console.error('Error sending message:', err);
+            }
+        }
     });
 
 
