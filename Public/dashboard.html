@@ -3,252 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZAPMRO | CRM Profissional</title>
+    <title>ZAPMRO | CRM & AI Profissional</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root { --primary: #128c7e; --secondary: #075e54; --bg: #f0f2f5; --light: #ffffff; }
-        body { background: var(--bg); height: 100vh; display: flex; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        :root { --primary: #128c7e; --secondary: #075e54; --bg: #f0f2f5; }
+        body { background: var(--bg); height: 100vh; display: flex; font-family: sans-serif; }
+        .sidebar-nav { width: 70px; background: #202c33; display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 25px; color: #aebac1; }
+        .sidebar-nav i { font-size: 24px; cursor: pointer; transition: 0.3s; }
+        .sidebar-nav i:hover, .sidebar-nav i.active { color: #fff; }
         
-        .sidebar { width: 400px; background: var(--light); border-right: 1px solid #ddd; display: flex; flex-direction: column; z-index: 10; }
-        .main-chat { flex: 1; display: flex; flex-direction: column; background: #e5ddd5; position: relative; }
-        .main-chat::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); opacity: 0.06; pointer-events: none; }
-
-        .search-container { padding: 10px 15px; background: #fff; }
-        .search-bar { background: #f0f2f5; border-radius: 8px; border: none; padding: 8px 15px; width: 100%; outline: none; }
-
-        .chat-list { flex: 1; overflow-y: auto; }
-        .chat-item { display: flex; align-items: center; padding: 12px 15px; border-bottom: 1px solid #f0f2f5; cursor: pointer; transition: 0.2s; }
-        .chat-item:hover { background: #f5f6f6; }
-        .chat-item.active { background: #ebebeb; }
-        .chat-avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; margin-right: 15px; background: #eee; }
-        .chat-info { flex: 1; min-width: 0; }
-        .chat-top { display: flex; justify-content: space-between; align-items: center; }
-        .chat-name { font-weight: 600; color: #111; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .chat-time { font-size: 12px; color: #666; }
-
-        .chat-header { background: #f0f2f5; padding: 10px 20px; display: flex; align-items: center; border-bottom: 1px solid #ddd; z-index: 5; }
-        .header-info { display: flex; align-items: center; gap: 15px; flex: 1; }
-        .header-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
-
-        .messages { flex: 1; overflow-y: auto; padding: 30px; display: flex; flex-direction: column; gap: 8px; z-index: 1; }
-        .msg-bubble { padding: 8px 12px; border-radius: 8px; max-width: 65%; font-size: 14.5px; position: relative; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
-        .msg-bubble.sent { align-self: flex-end; background: #dcf8c6; border-top-right-radius: 0; }
-        .msg-bubble.received { align-self: flex-start; background: var(--light); border-top-left-radius: 0; }
-        .msg-time { font-size: 10px; color: #999; text-align: right; margin-top: 4px; }
-
-        .footer-input { background: #f0f2f5; padding: 10px 20px; display: flex; align-items: center; gap: 15px; z-index: 5; }
-        .input-group { background: #fff; border-radius: 20px; display: flex; flex: 1; padding: 5px 15px; align-items: center; }
-        .chat-input { border: none; flex: 1; padding: 8px; outline: none; font-size: 15px; }
-        .btn-send { color: var(--primary); font-size: 20px; cursor: pointer; border: none; background: none; transition: 0.2s; }
-        .btn-send:hover { transform: scale(1.1); }
-
-        .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; display: none; align-items: center; justify-content: center; flex-direction: column; color: #fff; }
-        .qr-card { background: #fff; padding: 30px; border-radius: 20px; text-align: center; color: #333; }
+        .panel { flex: 1; display: flex; overflow: hidden; }
+        .chat-list-panel { width: 350px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+        .content-panel { flex: 1; background: #e5ddd5; position: relative; display: flex; flex-direction: column; }
         
-        .loading-chats { padding: 20px; text-align: center; color: #666; }
+        .kanban-view { display: none; flex: 1; padding: 20px; overflow-x: auto; gap: 20px; }
+        .kanban-col { min-width: 300px; background: #ebedef; border-radius: 10px; padding: 15px; }
+        
+        .active-tab { display: flex !important; }
+        .qr-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 2000; display: none; align-items: center; justify-content: center; color: #fff; }
     </style>
 </head>
 <body>
     <div id="qrOverlay" class="qr-overlay">
-        <div class="qr-card">
-            <h4 class="mb-4">Conectar WhatsApp</h4>
-            <div id="qrPlaceholder"><img id="qrImage" style="width:260px;"></div>
-            <p class="mt-4 text-muted">Abra o WhatsApp no seu celular e escaneie o código.</p>
+        <div class="bg-white p-4 rounded text-center text-dark">
+            <h4>Conectar WhatsApp</h4>
+            <img id="qrImg" style="width:250px;">
+            <p class="mt-2 text-muted">Escaneie para ativar a IA e Fluxos</p>
         </div>
     </div>
 
-    <div class="sidebar">
-        <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
-            <div class="d-flex align-items-center gap-2">
-                <i class="fab fa-whatsapp text-success fs-3"></i>
-                <h5 class="m-0 fw-bold">ZAPMRO CRM</h5>
-            </div>
-            <div>
-                <button onclick="startConnection()" class="btn btn-outline-success btn-sm rounded-circle"><i class="fas fa-qrcode"></i></button>
-                <button onclick="logout()" class="btn btn-outline-danger btn-sm rounded-circle ms-1"><i class="fas fa-sign-out-alt"></i></button>
-            </div>
-        </div>
-        <div class="search-container">
-            <input type="text" class="search-bar" placeholder="Pesquisar conversas...">
-        </div>
-        <div id="chatList" class="chat-list">
-            <div class="loading-chats">Aguardando conexão...</div>
-        </div>
+    <div class="sidebar-nav">
+        <i class="fas fa-comment-dots active" onclick="showTab('chat')"></i>
+        <i class="fas fa-columns" onclick="showTab('kanban')"></i>
+        <i class="fas fa-robot" onclick="showTab('ai')"></i>
+        <i class="fas fa-clock" onclick="showTab('agenda')"></i>
+        <i class="fas fa-sign-out-alt mt-auto" onclick="logout()"></i>
     </div>
 
-    <div class="main-chat">
-        <div id="chatHeader" class="chat-header" style="display:none;">
-            <div class="header-info">
-                <img id="headerAvatar" class="header-avatar" src="">
-                <div>
-                    <div id="headerName" class="fw-bold">Nome do Contato</div>
-                    <div class="text-muted small">online</div>
+    <div class="panel">
+        <!-- ABA CHAT -->
+        <div id="tab-chat" class="panel active-tab">
+            <div class="chat-list-panel">
+                <div class="p-3 bg-light d-flex justify-content-between">
+                    <h5 class="m-0">Conversas</h5>
+                    <button class="btn btn-sm btn-success" onclick="connect()"><i class="fas fa-sync"></i></button>
+                </div>
+                <div id="chatList" class="overflow-auto"></div>
+            </div>
+            <div class="content-panel">
+                <div id="chatHeader" class="p-3 bg-white border-bottom fw-bold">Selecione um chat</div>
+                <div id="msgs" class="flex-grow-1 p-3 overflow-auto d-flex flex-column gap-2"></div>
+                <div class="p-3 bg-light d-flex gap-2">
+                    <input type="text" id="msgInp" class="form-control" placeholder="Mensagem...">
+                    <button onclick="send()" class="btn btn-success"><i class="fas fa-paper-plane"></i></button>
                 </div>
             </div>
-            <div class="d-flex gap-3 text-muted">
-                <i class="fas fa-search cursor-pointer"></i>
-                <i class="fas fa-ellipsis-v cursor-pointer"></i>
+        </div>
+
+        <!-- ABA KANBAN -->
+        <div id="tab-kanban" class="kanban-view">
+            <div class="kanban-col">
+                <h6>Lead <button class="btn btn-sm float-end">+</button></h6>
+                <div id="col-lead" class="mt-3 d-flex flex-column gap-2"></div>
+            </div>
+            <div class="kanban-col">
+                <h6>Em Atendimento</h6>
+                <div id="col-prog" class="mt-3 d-flex flex-column gap-2"></div>
+            </div>
+            <div class="kanban-col">
+                <h6>Finalizado</h6>
+                <div id="col-done" class="mt-3 d-flex flex-column gap-2"></div>
             </div>
         </div>
 
-        <div id="msgContainer" class="messages">
-            <div class="h-100 d-flex flex-column align-items-center justify-content-center text-muted">
-                <i class="fab fa-whatsapp mb-3" style="font-size: 80px; opacity: 0.1;"></i>
-                <h5>Selecione uma conversa para começar</h5>
-                <p class="small">Suas mensagens são seguras e profissionais.</p>
+        <!-- ABA IA -->
+        <div id="tab-ai" class="panel p-5 bg-white flex-column gap-3" style="display:none;">
+            <h3>Configuração de IA</h3>
+            <div class="mb-3">
+                <label>OpenAI API Key</label>
+                <input type="password" id="aiKey" class="form-control">
             </div>
-        </div>
-
-        <div id="inputArea" class="footer-input" style="display:none;">
-            <i class="far fa-smile fs-4 text-muted cursor-pointer"></i>
-            <i class="fas fa-paperclip fs-4 text-muted cursor-pointer"></i>
-            <div class="input-group">
-                <input type="text" id="chatInput" class="chat-input" placeholder="Digite uma mensagem">
+            <div class="mb-3">
+                <label>Prompt da IA</label>
+                <textarea id="aiPrompt" class="form-control" rows="4"></textarea>
             </div>
-            <button onclick="sendMessage()" class="btn-send"><i class="fas fa-paper-plane"></i></button>
+            <button class="btn btn-primary" onclick="saveAI()">Salvar Configuração</button>
         </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const user = JSON.parse(localStorage.getItem('user'));
-        if (!user) window.location.href = 'index.html';
-        
+        const sid = user.id;
         const socket = io();
-        const sessionId = user.id;
-        let activeChatId = null;
-        let chatsLoaded = false;
+        let active = null;
 
-        socket.emit('join', sessionId);
+        socket.emit('join', sid);
+        socket.on('qr', src => { document.getElementById('qrOverlay').style.display='flex'; document.getElementById('qrImg').src=src; });
+        socket.on('ready', () => { document.getElementById('qrOverlay').style.display='none'; loadChats(); });
+        socket.on('new-message', m => { if(m.from===active || m.fromMe) append(m); });
 
-        socket.on('qr', src => {
-            document.getElementById('qrOverlay').style.display = 'flex';
-            document.getElementById('qrImage').src = src;
-        });
-
-        socket.on('ready', () => {
-            document.getElementById('qrOverlay').style.display = 'none';
-            loadChats();
-        });
-
-        socket.on('new-message', msg => {
-            if (activeChatId === msg.from || msg.fromMe) {
-                appendMessage(msg);
-            }
-            // Update last message in list
-            const item = document.querySelector(`[data-id="${msg.from}"]`);
-            if (item) {
-                // simple refresh for now
-                loadChats();
-            }
-        });
-
-        async function startConnection() {
-            fetch('/api/whatsapp/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId })
-            });
+        function showTab(t) {
+            document.querySelectorAll('.panel, .kanban-view').forEach(p => p.classList.remove('active-tab'));
+            document.getElementById('tab-'+t).classList.add('active-tab');
         }
 
+        async function connect() { fetch('/api/whatsapp/connect', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid})}); }
+        
         async function loadChats() {
-            try {
-                const res = await fetch(`/api/whatsapp/chats?sessionId=${sessionId}`);
-                const chats = await res.json();
-                const list = document.getElementById('chatList');
-                if (chats.length === 0) {
-                    list.innerHTML = '<div class="p-4 text-center text-muted">Nenhuma conversa encontrada</div>';
-                    return;
-                }
-                list.innerHTML = chats.map(c => `
-                    <div class="chat-item ${activeChatId === c.id ? 'active' : ''}" data-id="${c.id}" onclick="selectChat('${c.id}', '${c.name}', '${c.pic}')">
-                        <img src="${c.pic}" class="chat-avatar">
-                        <div class="chat-info">
-                            <div class="chat-top">
-                                <span class="chat-name">${c.name || c.id.split('@')[0]}</span>
-                                <span class="chat-time">${c.timestamp ? new Date(c.timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
-                            </div>
-                            <div class="text-muted small text-truncate">Clique para abrir a conversa</div>
-                        </div>
-                    </div>
-                `).join('');
-                chatsLoaded = true;
-            } catch (e) {
-                console.error(e);
-            }
+            const r = await fetch('/api/whatsapp/chats?sessionId='+sid);
+            const chats = await r.json();
+            document.getElementById('chatList').innerHTML = chats.map(c => `
+                <div class="p-3 border-bottom cursor-pointer d-flex align-items-center gap-3" onclick="sel('${c.id}','${c.name}')">
+                    <img src="${c.pic}" style="width:40px; border-radius:50%">
+                    <div><div class="fw-bold">${c.name||c.id}</div><div class="small text-muted">Clique para abrir</div></div>
+                </div>
+            `).join('');
         }
 
-        async function selectChat(id, name, pic) {
-            activeChatId = id;
-            document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
-            document.querySelector(`[data-id="${id}"]`).classList.add('active');
+        function sel(id, name) { active=id; document.getElementById('chatHeader').innerText=name||id; document.getElementById('msgs').innerHTML=''; }
 
-            document.getElementById('chatHeader').style.display = 'flex';
-            document.getElementById('inputArea').style.display = 'flex';
-            document.getElementById('headerName').innerText = name || id;
-            document.getElementById('headerAvatar').src = pic;
-
-            const msgContainer = document.getElementById('msgContainer');
-            msgContainer.innerHTML = '<div class="text-center p-5"><div class="spinner-border text-success"></div></div>';
-
-            try {
-                const res = await fetch(`/api/whatsapp/history?sessionId=${sessionId}&chatId=${id}`);
-                const history = await res.json();
-                msgContainer.innerHTML = '';
-                history.forEach(appendMessage);
-            } catch (e) {
-                msgContainer.innerHTML = '<div class="text-danger p-3">Erro ao carregar histórico</div>';
-            }
+        function send() {
+            const v = document.getElementById('msgInp').value;
+            if(!v || !active) return;
+            fetch('/api/whatsapp/send', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sessionId:sid, to:active, message:v})});
+            append({body:v, fromMe:true});
+            document.getElementById('msgInp').value='';
         }
 
-        function appendMessage(m) {
-            const container = document.getElementById('msgContainer');
-            const div = document.createElement('div');
-            div.className = `msg-bubble ${m.fromMe ? 'sent' : 'received'}`;
-            
-            let content = m.body;
-            if (m.hasMedia) content = '<i>[Arquivo de mídia]</i>';
-            if (!content) content = '...';
-
-            div.innerHTML = `
-                <div>${content}</div>
-                <div class="msg-time">${new Date(m.timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-            `;
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
+        function append(m) {
+            const d = document.createElement('div');
+            d.className = `p-2 rounded ${m.fromMe?'bg-success text-white align-self-end':'bg-white align-self-start'}`;
+            d.style.maxWidth = '70%';
+            d.innerText = m.body;
+            document.getElementById('msgs').appendChild(d);
+            document.getElementById('msgs').scrollTop = document.getElementById('msgs').scrollHeight;
         }
 
-        async function sendMessage() {
-            const input = document.getElementById('chatInput');
-            const text = input.value.trim();
-            if (!text || !activeChatId) return;
-
-            input.value = '';
-            try {
-                await fetch('/api/whatsapp/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId, to: activeChatId, message: text })
-                });
-                // Note: socket will broadcast back the message through 'new-message' if we handled it in backend
-                // but we also append manually for speed or rely on message_create
-            } catch (e) {
-                alert('Erro ao enviar');
-            }
-        }
-
-        document.getElementById('chatInput').addEventListener('keypress', e => {
-            if (e.key === 'Enter') sendMessage();
-        });
-
-        function logout() {
-            localStorage.removeItem('user');
-            window.location.href = 'index.html';
-        }
-
-        // Tentar conectar automaticamente ao carregar
-        startConnection();
+        function logout() { localStorage.clear(); window.location.href='index.html'; }
+        
+        connect();
     </script>
 </body>
 </html>
