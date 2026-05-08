@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import axios from 'axios';
+// Using direct import for whatsapp-web.js if possible, else default pkg
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode';
