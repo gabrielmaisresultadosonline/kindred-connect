@@ -176,9 +176,25 @@ async function handleIncomingMessage(sessionId, msg) {
     // Emit to UI
     io.to(sessionId).emit('new-message', { chatId: msg.from, message: msg });
 
-    // AI Processing
+    // --- Automation Flows ---
+    const flows = (readJson('flows.json') || {})[sessionId] || [];
+    const triggerFlow = flows.find(f => 
+        f.trigger && msg.body.toLowerCase().includes(f.trigger.toLowerCase())
+    );
+
+    if (triggerFlow) {
+        for (const action of triggerFlow.actions) {
+            if (action.type === 'message') {
+                await clients.get(sessionId).sendMessage(msg.from, action.content);
+            } else if (action.type === 'wait') {
+                await new Promise(r => setTimeout(r, action.duration * 1000));
+            }
+        }
+    }
+
+    // --- AI Processing ---
     const aiConfig = (readJson('ai_config.json') || {})[sessionId];
-    if (aiConfig && aiConfig.enabled && !msg.fromMe) {
+    if (aiConfig && aiConfig.enabled && !msg.fromMe && !triggerFlow) {
         processAiMessage(sessionId, msg.from, clients.get(sessionId), msg.body);
     }
 }
