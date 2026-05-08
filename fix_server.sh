@@ -1,3 +1,9 @@
+#!/bin/bash
+PROJECT_DIR=~/kindred-connect
+cd $PROJECT_DIR
+
+# 1. Garantir que o index.js use 0.0.0.0 (escuta em todos os IPs)
+cat << 'SERVER_FIX' > Server/index.js
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -43,3 +49,18 @@ io.on('connection', (s) => {
 server.listen(PORT, '0.0.0.0', () => {
     console.log('🚀 ZAPMRO ONLINE EM: http://167.88.42.133:3000');
 });
+SERVER_FIX
+
+# 2. Liberar portas no Firewall (Hostinger/Ubuntu)
+sudo ufw allow 3000/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw disable && sudo ufw enable -f
+
+# 3. Reiniciar App
+pm2 delete zapmro 2>/dev/null
+pm2 start Server/index.js --name "zapmro"
+pm2 save
+
+echo "✅ PORTA 3000 LIBERADA E SERVIDOR RECONFIGURADO!"
+echo "🔗 TENTE AGORA: http://167.88.42.133:3000"
