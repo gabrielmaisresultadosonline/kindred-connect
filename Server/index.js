@@ -7,7 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import axios from 'axios';
-import { Client, LocalAuth, MessageMedia } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
@@ -371,9 +372,8 @@ io.on('connection', (socket) => {
             }
         }
     });
+});
 
-
-// Restore sessions on startup
 const restoreSessions = async () => {
     const sessions = readJson('sessions.json') || [];
     for (const sess of sessions) {
