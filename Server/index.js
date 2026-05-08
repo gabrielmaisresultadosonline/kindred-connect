@@ -371,9 +371,8 @@ io.on('connection', (socket) => {
             }
         }
     });
+});
 
-
-// Restore sessions on startup
 const restoreSessions = async () => {
     const sessions = readJson('sessions.json') || [];
     for (const sess of sessions) {
